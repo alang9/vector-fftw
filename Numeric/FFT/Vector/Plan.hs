@@ -1,16 +1,18 @@
 module Numeric.FFT.Vector.Plan(
                 -- * Transform
                 Transform(),
+                planOfTypeWith,
                 planOfType,
                 PlanType(..),
                 plan,
                 run,
                 TransformND(),
+                planOfTypeWithND,
                 planOfTypeND,
                 planND,
                 runND,
                 -- * Plans
-                Plan(),
+                Plan(..),
                 planInputSize,
                 planOutputSize,
                 execute,

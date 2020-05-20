@@ -2,17 +2,19 @@
 module Numeric.FFT.Vector.Base(
             -- * Transforms
             Transform(..),
+            planOfTypeWith,
             planOfType,
             PlanType(..),
             plan,
             run,
             -- * multi-demensional Transforms
             TransformND(..),
+            planOfTypeWithND,
             planOfTypeND,
             planND,
             runND,
             -- * Plans
-            Plan(),
+            Plan(planExecute),
             planInputSize,
             planOutputSize,
             execute,
@@ -184,12 +186,23 @@ data Transform a b = Transform {
 
 -- | Create a 'Plan' of a specific size for this transform.
 planOfType :: (Storable a, Storable b) => PlanType
-                                -> Transform a b -> Int -> Plan a b
-planOfType ptype Transform{..} n
+  -> Transform a b -> Int -> Plan a b
+planOfType ptype trans n
   | m_in <= 0 || m_out <= 0 = error "Can't (yet) plan for empty arrays!"
   | otherwise  = unsafePerformIO $ do
     planInput <- newFFTVector m_in
     planOutput <- newFFTVector m_out
+    planOfTypeWith ptype trans n planInput planOutput
+  where
+    m_in = inputSize trans n
+    m_out = outputSize trans n
+{-# INLINE planOfType #-}
+
+planOfTypeWith :: (Storable a, Storable b) => PlanType
+  -> Transform a b -> Int -> VS.MVector RealWorld a -> VS.MVector RealWorld b -> IO (Plan a b)
+planOfTypeWith ptype Transform{..} n planInput planOutput
+  | m_in <= 0 || m_out <= 0 = error "Can't (yet) plan for empty arrays!"
+  | otherwise  = do
     MS.unsafeWith planInput $ \inP -> MS.unsafeWith planOutput $ \outP -> do
         pPlan <- makePlan (toEnum n) inP outP $ planInitFlags ptype DestroyInput
         cPlan <- newPlan pPlan
@@ -202,7 +215,7 @@ planOfType ptype Transform{..} n
   where
     m_in = inputSize n
     m_out = outputSize n
-{-# INLINE planOfType #-}
+{-# INLINE planOfTypeWith #-}
 
 -- | Create a 'Plan' of a specific size.  This function is equivalent to
 -- @'planOfType' 'Estimate'@.
@@ -237,13 +250,26 @@ data TransformND a b = TransformND {
 --
 -- @since 0.2
 planOfTypeND :: (Storable a, Storable b) => PlanType
-                                -> TransformND a b -> VS.Vector Int -> Plan a b
-planOfTypeND ptype TransformND{..} dims
+  -> TransformND a b -> VS.Vector Int -> Plan a b
+planOfTypeND ptype trans dims
   | m_in <= 0 || m_out <= 0 = error "Can't (yet) plan for empty arrays!"
   | otherwise  = unsafePerformIO $ do
-    mdims <- unsafeThaw $ V.map toEnum dims
     planInput <- newFFTVector m_in
     planOutput <- newFFTVector m_out
+    planOfTypeWithND ptype trans dims planInput planOutput
+  where
+    m = V.product $ V.init dims
+    m_in = m * inputSizeND trans (V.last dims)
+    m_out = m * outputSizeND trans (V.last dims)
+{-# INLINE planOfTypeND #-}
+
+planOfTypeWithND :: (Storable a, Storable b) => PlanType
+  -> TransformND a b -> VS.Vector Int -> MS.MVector RealWorld a
+  -> MS.MVector RealWorld b -> IO (Plan a b)
+planOfTypeWithND ptype TransformND{..} dims planInput planOutput
+  | m_in <= 0 || m_out <= 0 = error "Can't (yet) plan for empty arrays!"
+  | otherwise  = do
+    mdims <- unsafeThaw $ V.map toEnum dims
     MS.unsafeWith mdims $ \dimsP -> MS.unsafeWith planInput $ \inP -> MS.unsafeWith planOutput $ \outP -> do
         pPlan <- makePlanND (toEnum $ V.length dims) dimsP inP outP $ planInitFlags ptype DestroyInput
         cPlan <- newPlan pPlan
@@ -257,7 +283,7 @@ planOfTypeND ptype TransformND{..} dims
     m = V.product $ V.init dims
     m_in = m * inputSizeND (V.last dims)
     m_out = m * outputSizeND (V.last dims)
-{-# INLINE planOfTypeND #-}
+{-# INLINE planOfTypeWithND #-}
 
 -- | Create a 'Plan' of a specific size.  This function is equivalent to
 -- @'planOfType' 'Estimate'@.
